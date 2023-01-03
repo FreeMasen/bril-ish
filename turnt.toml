@@ -1,0 +1,8 @@
+[envs.tdce]
+command = "cargo build --bin tdce -qq &&  bril2json < {filename} | RUST_LOG=debug ./target/debug/tdce | brili"
+
+[envs.baseline]
+command = "bril2json < {filename} | brili"
+
+[envs.tdce-floats]
+command = "cargo build --features float --bin tdce -qq &&  bril2json < {filename} | RUST_LOG=debug ./target/debug/tdce | brili"
