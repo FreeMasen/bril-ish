@@ -8,6 +8,6 @@ fn main() {
     } else {
         bril_rs::load_program()
     };
-    let prog = bril_ish::perform_dead_code_elimination(prog);
+    let prog = bril_ish::perform_lvn(prog);
     bril_rs::output_program(&prog);
 }
