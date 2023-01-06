@@ -1,0 +1,3 @@
+
+command = "cargo build --features float --bin lvn --bin tdce -q && bril2json < {filename} | ./target/debug/lvn | ./target/debug/tdce | brili"
+output."exe.out" = "-"

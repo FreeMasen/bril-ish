@@ -8,15 +8,16 @@ pub fn perform_dead_code_elimination(prog: Program) -> Program {
     for func in prog.functions {
         let mut blocks = instrs_to_blocks(&func.instrs);
         loop {
-            let before = blocks.len();
+            let before: usize = blocks.iter().map(|b| b.body.len()).sum();
             blocks = elim_dead_code(blocks);
-            if before == blocks.len() {
+            blocks = drop_all_local_killed(blocks);
+            if before == blocks.iter().map(|b| b.body.len()).sum::<usize>() {
                 break;
             }
         }
         ret_funcs.push(Function {
             args: func.args,
-            instrs: blocks_to_codes(blocks),
+            instrs: blocks_to_codes(blocks, false),
             name: func.name,
             return_type: func.return_type,
         });
@@ -32,7 +33,7 @@ pub fn perform_lvn(program: Program) -> Program {
         let blocks = instrs_to_blocks(&func.instrs);
         let numbered = number_blocks(blocks);
         ret_funcs.push(Function {
-            instrs: blocks_to_codes(numbered),
+            instrs: blocks_to_codes(numbered, true),
             ..func
         })
     }
@@ -77,6 +78,45 @@ pub fn elim_dead_code(blocks: Vec<BasicBlock>) -> Vec<BasicBlock> {
         .collect()
 }
 
+pub fn drop_all_local_killed(blocks: Vec<BasicBlock>) -> Vec<BasicBlock> {
+    blocks.into_iter().map(drop_local_killed).collect()
+}
+
+pub fn drop_local_killed(block: BasicBlock) -> BasicBlock {
+    let mut set: BTreeMap<usize, Instruction> = block.body.into_iter().enumerate().collect();
+    let mut to_remove = HashSet::new();
+    let mut last_def: HashMap<&str, usize> = HashMap::new();
+    for (idx, instr) in &set {
+        match instr {
+            Instruction::Value { args, .. } |
+            Instruction::Effect { args, .. } => {
+                for arg in args {
+                    last_def.retain(|&v, _| v != arg);
+                }
+            },
+            _ => {},
+        }
+        match instr {
+            Instruction::Constant { dest, .. } |
+            Instruction::Value { dest, ..} => {
+                if let Some(idx) = last_def.get(dest.as_str()) {
+                    to_remove.insert(*idx);
+                }
+                last_def.insert(dest.as_str(), *idx);
+            },
+            _ => {},
+          }
+    }
+
+    for id in to_remove {
+        set.remove(&id);
+    }
+    BasicBlock {
+        label: block.label,
+        body: set.into_values().collect()
+    }
+}
+
 pub fn instrs_to_blocks(instrs: &[Code]) -> Vec<BasicBlock> {
     log::trace!("instrs_to_blocks");
     let mut ret = Vec::new();
@@ -111,11 +151,17 @@ pub fn instrs_to_blocks(instrs: &[Code]) -> Vec<BasicBlock> {
     ret
 }
 
-fn blocks_to_codes(blocks: Vec<BasicBlock>) -> Vec<Code> {
+fn blocks_to_codes(blocks: Vec<BasicBlock>, include_first_label: bool) -> Vec<Code> {
     log::trace!("blocks_to_codes");
     let mut ret = Vec::new();
     for block in blocks {
-        ret.push(Code::Label { label: block.label });
+        if block.label == "b1" {
+            if include_first_label {
+                ret.push(Code::Label { label: block.label });
+            }
+        } else {
+            ret.push(Code::Label { label: block.label });
+        }
         for instr in block.body {
             ret.push(Code::Instruction(instr));
         }
@@ -160,6 +206,7 @@ fn gen_last_writes(block: &[Instruction]) -> Vec<bool> {
 }
 
 fn gen_read_first(block: &[Instruction]) -> HashSet<String> {
+    log::trace!("gen_read_first");
     let mut ret = HashSet::new();
     let mut writes = HashSet::new();
     for instr in block {
@@ -180,7 +227,7 @@ fn gen_read_first(block: &[Instruction]) -> HashSet<String> {
             }
         }
     }
-    ret.into_iter().cloned().collect()
+    dbg!(ret.into_iter().cloned().collect())
 }
 
 #[derive(Default, Debug, Clone, PartialEq)]
@@ -217,7 +264,7 @@ impl LocalInstrNumbering {
                     value: Literal::Int(0),
                 },
             );
-            ret.names.insert(ret.next_idx, val);
+            ret.names.insert(idx, val);
         }
         ret
     }

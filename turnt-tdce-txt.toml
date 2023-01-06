@@ -1,0 +1,2 @@
+command = "cargo build --features float --bin tdce -q && bril2json < {filename} | ./target/debug/tdce | bril2txt"
+output."text-tdce.out" = "-"
